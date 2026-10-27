@@ -1,4 +1,5 @@
 library(tidyverse)
+library(tseries)
 
 df <- read_csv("data/data_raw.csv")
 
@@ -11,9 +12,7 @@ df <- read_csv("data/data_raw.csv")
 
 df <- df %>%
   mutate(month = dmy(month)) %>%
-  arrange(month) %>%
-  filter(month >= as.Date("1989-01-01") &
-           month <= as.Date("2020-12-01"))
+  arrange(month)
 
 colSums(is.na(df))
 df %>% count(month) %>% filter(n > 1) # No duplicates and no missing values
@@ -33,7 +32,36 @@ df <- df %>%
     )
   )
 
+df <- df %>%
+  filter(month >= as.Date("1989-01-01") & month <= as.Date("2020-12-01"))
+
 colSums(is.na(df))
+
+#################
+
+# ADF Test
+vars <- paste0("x", 1:225)
+
+# Run ADF tests
+adf_results <- tibble(
+  variable = vars,
+  p_value = map_dbl(
+    vars,
+    ~ adf.test(na.omit(df[[.x]]))$p.value
+  )
+) %>%
+  mutate(
+    stationary = p_value < 0.05
+  )
+
+adf_results %>%
+  count(stationary)
+
+# View variables that fail the ADF test
+adf_results %>%
+  filter(!stationary)
+
+write_csv(adf_results,  "data/ADF/adf.csv")
 
 #################
 
