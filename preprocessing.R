@@ -42,7 +42,6 @@ colSums(is.na(df))
 # ADF Test
 vars <- paste0("x", 1:225)
 
-# Run ADF tests
 adf_results <- tibble(
   variable = vars,
   p_value = map_dbl(
@@ -57,7 +56,6 @@ adf_results <- tibble(
 adf_results %>%
   count(stationary)
 
-# View variables that fail the ADF test
 adf_results %>%
   filter(!stationary)
 
