@@ -2,21 +2,38 @@ library(tidyverse)
 
 df <- read_csv("data/data_raw.csv")
 
-# 221 - CPIAUCSL
-# 222 - GS1
-# 223 - GS10
-# 224 - M1SL
-# 225 - M2SL
-# 226 - UNRATE
+# 220 - CPIAUCSL - 3
+# 221 - GS1 - 1
+# 222 - GS10 - 1
+# 223 - M1SL - 3
+# 224 - M2SL - 3
+# 225 - UNRATE - 1
 
 df <- df %>%
   mutate(month = dmy(month)) %>%
   arrange(month) %>%
-  filter(month >= as.Date("1989-10-01") &
+  filter(month >= as.Date("1989-01-01") &
            month <= as.Date("2020-12-01"))
 
 colSums(is.na(df))
 df %>% count(month) %>% filter(n > 1) # No duplicates and no missing values
+
+#################
+
+# Stationarity transformations
+log_diff_vars <- c("x220", "x223", "x224")
+
+df <- df %>%
+  mutate(
+    across(
+      all_of(log_diff_vars),
+      
+      # First difference of log: log(x(t)) - log(x(t-1))
+      ~ log(.x) - log(lag(.x, 1))
+    )
+  )
+
+colSums(is.na(df))
 
 #################
 
@@ -73,12 +90,9 @@ datasets <- map(
       select(
         month,
         target_date,
-        starts_with(paste0(target_var, "_lag")),
         ends_with(c("_lag0", "_lag1", "_lag2", "_lag3")),
         target
-      ) %>%
-      select(-any_of(target_var)) %>%
-      select(-matches("^y_h(1|3|6|12)$"))
+      )
   }
 )
 
