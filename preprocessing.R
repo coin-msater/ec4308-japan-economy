@@ -33,7 +33,7 @@ df <- df %>%
   )
 
 df <- df %>%
-  filter(month >= as.Date("1989-01-01") & month <= as.Date("2020-12-01"))
+  filter(month >= as.Date("1974-02-01") & month <= as.Date("2022-12-01"))
 
 colSums(is.na(df))
 
@@ -95,7 +95,7 @@ df_targets <- df %>%
 # Combine predictors and targets
 df_model <- df_lagged %>%
   left_join(df_targets, by = "month") %>%
-  filter(month <= as.Date("2019-12-01") & month >= as.Date("1990-01-01"))
+  filter(month <= as.Date("2021-12-01") & month >= as.Date("1974-05-01"))
 
 colSums(is.na(df_model))
 df_model %>% count(month) %>% filter(n > 1) # No duplicates and no missing values
