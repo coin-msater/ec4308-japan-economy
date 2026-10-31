@@ -23,7 +23,7 @@ make_series=function(df_h,lag){
 
 #3) max_p - the largest lag order BIC may choose (candidates are AR(1) ... AR(max_p))
 
-runAR=function(Y,lag,max_p=12){
+runAR=function(Y,lag,max_p=12,p_fixed=NULL){
   
   Y=Y[1:(nrow(Y)-lag+1),,drop=FALSE] #drop the last h-1 rows so that the window ends at the forecast origin (nothing is dropped when lag=1)
   
@@ -34,8 +34,9 @@ runAR=function(Y,lag,max_p=12){
   
   X.out=tail(aux,1)[1:ncol(X)] #retrieve the last max_p observations of the window - these are the regressors for the h-step forecast (same construction for every horizon)
   
+  candidates=if(is.null(p_fixed)) seq(1,ncol(X),1) else p_fixed
   bb=Inf #initialize the "best BIC" at a huge number
-  for(i in seq(1,ncol(X),1)){ #try for every lag length 1:max_p
+  for(i in candidates){ 
     m=lm(y~X[,1:i]) #estimate AR(i) by OLS
     crit=BIC(m) #retrieve BIC
     if(crit<bb){ #if BIC improved
@@ -69,7 +70,7 @@ runAR=function(Y,lag,max_p=12){
 #5) max_p - the largest lag order BIC may choose
 
 
-ar.rolling.window=function(Y,nprev_covid,nprev_nocovid,lag=1,max_p=12){
+ar.rolling.window=function(Y,nprev_covid,nprev_nocovid,lag=1,max_p=12,p_fixed=NULL){
   
   save.coef=matrix(NA,nprev_covid,max_p+1) #blank matrix for coefficients at each iteration
   save.pred=matrix(NA,nprev_covid,1) #blank for forecasts
@@ -77,7 +78,7 @@ ar.rolling.window=function(Y,nprev_covid,nprev_nocovid,lag=1,max_p=12){
   for(i in nprev_covid:1){  #NB: backwards FOR loop: going from 352 down to 1
     
     Y.window=Y[(1+nprev_covid-i):(nrow(Y)-i),,drop=FALSE] #define the estimation window (first one: 1 to nrow-nprev, then 2 to nrow-nprev+1 etc.)
-    fact=runAR(Y.window,lag,max_p) #call the function to fit the AR(p) selected on BIC and generate h-step forecast
+    fact=runAR(Y.window,lag,max_p,p_fixed) #call the function to fit the AR(p) selected on BIC and generate h-step forecast
     save.coef[(1+nprev_covid-i),]=fact$coef #save estimated coefficients
     save.pred[(1+nprev_covid-i),]=fact$pred #save the forecast
     save.p[1+nprev_covid-i]=fact$p #save the selected lag order
@@ -90,11 +91,13 @@ ar.rolling.window=function(Y,nprev_covid,nprev_nocovid,lag=1,max_p=12){
   
   actual=tail(real,nprev_covid) #realized values over the whole test window
   
-  rmse=sqrt(mean((actual-save.pred)^2)) #RMSE, COVID-inclusive (all nprev_covid forecasts)
+  mse=mean((actual-save.pred)^2) #MSE, COVID-inclusive (all nprev_covid forecasts)
+  rmse=sqrt(mse) #RMSE, COVID-inclusive
   mae=mean(abs(actual-save.pred)) #MAE, COVID-inclusive
-  rmse.pre=sqrt(mean((actual[1:nprev_nocovid]-save.pred[1:nprev_nocovid])^2)) #RMSE, pre-COVID (first nprev_nocovid forecasts)
+  mse.pre=mean((actual[1:nprev_nocovid]-save.pred[1:nprev_nocovid])^2) #MSE, pre-COVID (first nprev_nocovid forecasts)
+  rmse.pre=sqrt(mse.pre) #RMSE, pre-COVID
   mae.pre=mean(abs(actual[1:nprev_nocovid]-save.pred[1:nprev_nocovid])) #MAE, pre-COVID
-  errors=c("rmse"=rmse,"mae"=mae,"rmse.pre"=rmse.pre,"mae.pre"=mae.pre) #stack errors in a vector
+  errors=c("mse"=mse,"rmse"=rmse,"mae"=mae,"mse.pre"=mse.pre,"rmse.pre"=rmse.pre,"mae.pre"=mae.pre) #stack errors in a vector
   
   return(list("pred"=save.pred,"coef"=save.coef,"p"=save.p,"errors"=errors)) #return forecasts, history of estimated coefficients, selected orders, and errors for the period.
 }
@@ -112,17 +115,50 @@ nprev_nocovid <- 328  # pre-COVID test window
 nprev_covid <- 352   # COVID-inclusive test window
 
 
-ar_h1_bic  <- ar.rolling.window(make_series(df_h1,1), nprev_covid, nprev_nocovid, lag = 1)
-ar_h3_bic  <- ar.rolling.window(make_series(df_h3,3), nprev_covid, nprev_nocovid, lag = 3)
-ar_h6_bic  <- ar.rolling.window(make_series(df_h6,6), nprev_covid, nprev_nocovid, lag = 6)
-ar_h12_bic <- ar.rolling.window(make_series(df_h12,12), nprev_covid, nprev_nocovid, lag = 12)
+
+select_p=function(Y,lag,nprev,max_p=12){
+  ntrain=nrow(Y)-nprev                        # first 220 obs, before the test window
+  runAR(Y[1:ntrain,,drop=FALSE],lag,max_p)$p  # BIC on that window only
+}
+
+run_h=function(df_h,h){
+  Y=make_series(df_h,h)
+  p=select_p(Y,h,nprev_covid)
+  res=ar.rolling.window(Y,nprev_covid,nprev_nocovid,lag=h,p_fixed=p)
+  res$p_selected=p
+  res
+}
 
 
-table(ar_h1_bic$p) #distribution of selected p for ar_h1_bic
-table(ar_h3_bic$p) #distribution of selected p for ar_h3_bic
-table(ar_h6_bic$p) #distribution of selected p for ar_h6_bic
-table(ar_h12_bic$p) #distribution of selected p for ar_h12_bic
+ar_h1_bic  <- run_h(df_h1,1)
+ar_h3_bic  <- run_h(df_h3,3)
+ar_h6_bic  <- run_h(df_h6,6)
+ar_h12_bic <- run_h(df_h12,12)
+
+c(h1=ar_h1_bic$p_selected, h3=ar_h3_bic$p_selected,
+  h6=ar_h6_bic$p_selected, h12=ar_h12_bic$p_selected)   # selected p per horizon
 
 
-#table of errors by horizon
-rbind(h1=ar_h1_bic$errors, h3=ar_h3_bic$errors, h6=ar_h6_bic$errors, h12=ar_h12_bic$errors)
+
+err_stats=function(res,df_h,h){
+  actual=tail(make_series(df_h,h)[,1],nprev_covid)  #the 352 out-of-sample actuals
+  e=as.numeric(actual-res$pred)
+  
+  idx=list(pre=1:nprev_nocovid,                     #328 forecasts, Sep 1992 - Dec 2019
+           covid_incl=1:nprev_covid)                #352 forecasts, Sep 1992 - Dec 2021
+  
+  map_dfr(names(idx),function(nm){
+    ee=e[idx[[nm]]]
+    tibble(horizon=h,period=nm,n=length(ee),
+           mse=mean(ee^2),rmse=sqrt(mean(ee^2)),mae=mean(abs(ee)))
+  })
+}
+
+oos_tbl=bind_rows(
+  err_stats(ar_h1_bic, df_h1, 1),
+  err_stats(ar_h3_bic, df_h3, 3),
+  err_stats(ar_h6_bic, df_h6, 6),
+  err_stats(ar_h12_bic,df_h12,12)
+)
+
+oos_tbl
