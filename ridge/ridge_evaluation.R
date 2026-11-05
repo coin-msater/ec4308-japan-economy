@@ -1,7 +1,6 @@
 library(readr)
 library(dplyr)
 
-# evaluation functions
 RMSE <- function(pred, actual) {
   sqrt(mean((actual - pred)^2))
 }
@@ -10,50 +9,73 @@ MAE <- function(pred, actual) {
   mean(abs(actual - pred))
 }
 
-# evaluation periods
-validation_end <- as.Date("1992-08-01")
-test_start <- as.Date("1992-09-01")
-pre_covid_end <- as.Date("2019-12-01")
-covid_end <- as.Date("2021-12-01")
-
 horizons <- c(1, 3, 6, 12)
 
-# empty table for results
-evaluation_results <- data.frame()
+comparison <- data.frame()
 
 for (h in horizons) {
-  results <- read_csv(
+  
+  # Original monthly-tuning Ridge
+  old <- read_csv(
     paste0("ridge/results/ridge_h", h, ".csv"),
     show_col_types = FALSE
   )
   
-  # define evaluation periods
-  results <- results %>%
+  # New periodic-tuning Ridge
+  new <- read_csv(
+    paste0(
+      "ridge/results/periodic_10block/ridge_h",
+      h, ".csv"
+    ),
+    show_col_types = FALSE
+  )
+  
+  # Match forecasts by origin AND target date
+  matched <- inner_join(
+    old %>%
+      select(forecast_origin, target_date,
+             actual_old = actual,
+             predicted_old = predicted),
+    new %>%
+      select(forecast_origin, target_date,
+             actual_new = actual,
+             predicted_new = predicted),
+    by = c("forecast_origin", "target_date")
+  )
+  
+  # Verify identical realized targets
+  stopifnot(
+    all(abs(matched$actual_old -
+              matched$actual_new) < 1e-8)
+  )
+  
+  # Define evaluation periods
+  matched <- matched %>%
     mutate(
       period = case_when(
-        forecast_origin <= validation_end ~ "Validation",
-        forecast_origin >= test_start &
-          forecast_origin <= pre_covid_end ~ "Pre-COVID",
-        forecast_origin >= as.Date("2020-01-01") &
-          forecast_origin <= covid_end ~ "COVID period"
+        forecast_origin <= as.Date("2019-12-01") ~ "Pre-COVID",
+        TRUE ~ "COVID period"
       )
     )
   
-  # calculate performance for each period
-  metrics <- results %>%
+  # Compare forecasting errors
+  metrics <- matched %>%
     group_by(period) %>%
     summarise(
       N = n(),
-      RMSE = RMSE(predicted, actual),
-      MAE = MAE(predicted, actual),
+      RMSE_old = RMSE(predicted_old, actual_old),
+      RMSE_new = RMSE(predicted_new, actual_new),
+      MAE_old = MAE(predicted_old, actual_old),
+      MAE_new = MAE(predicted_new, actual_new),
       .groups = "drop"
     ) %>%
-    mutate(horizon = h)
+    mutate(
+      horizon = h,
+      RMSE_change_pct =
+        100 * (RMSE_new / RMSE_old - 1)
+    )
   
-  evaluation_results <- bind_rows(
-    evaluation_results,
-    metrics
-  )
+  comparison <- bind_rows(comparison, metrics)
 }
 
-print(evaluation_results)
+print(comparison)
