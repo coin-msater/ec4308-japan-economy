@@ -187,7 +187,6 @@ for (h in horizons) {
   
   all_forecasts <- data.frame()
   all_tuning <- data.frame()
-
   for (b in seq_len(nrow(schedule))) {
     s <- schedule[b, ]
     tuning <- tune_lambda(
@@ -253,6 +252,17 @@ for (h in horizons) {
     file.path(output_dir,paste0("ridge_h", h, "_tuning.csv")
     )
   )
+  # save Ridge forecasts for ensemble models
+  ensemble_results <- data.frame(
+    horizon = h,
+    forecast_origin = all_forecasts$forecast_origin,
+    target_date = all_forecasts$target_date,
+    actual = all_forecasts$actual,
+    predicted = all_forecasts$predicted)
+  
+  write_csv(
+    ensemble_results,
+    file.path(output_dir, paste0("ridge_ensemble_h", h, ".csv")))
   
   cat(
     "Finished horizon:", h,
@@ -261,59 +271,3 @@ for (h in horizons) {
   )
 }
 cat("\nAll Ridge horizons completed.\n")
-
-par(mfrow = c(4, 4))
-for (nm in names(cv_curves)) {
-  curve <- cv_curves[[nm]]
-  plot(log10(lambda_grid), curve, type = "l",
-       xlab = "log10(lambda)", ylab = "mean CV MSE", main = nm)
-  abline(v = log10(lambda_grid[which.min(curve)]), lty = 2)
-}
-par(mfrow = c(1, 1))
-sapply(cv_curves, function(curve) min(curve) / curve[1])
-
-
-
-
-
-
-
-hs <- c(1, 3, 6, 12)
-files <- lapply(hs, function(h) {
-  d <- read_csv(paste0("data/processed/h", h, ".csv"), show_col_types = FALSE)
-  d$month <- as.Date(d$month)
-  d$target_date <- as.Date(d$target_date)
-  d
-})
-names(files) <- paste0("h", hs)
-# check 1: is target_date exactly h months after month?
-mdiff <- function(a, b) {
-  12 * (as.integer(format(b, "%Y")) - as.integer(format(a, "%Y"))) +
-    as.integer(format(b, "%m")) - as.integer(format(a, "%m"))
-}
-for (h in hs) {
-  d <- files[[paste0("h", h)]]
-  cat("h =", h, "\n"); print(table(mdiff(d$month, d$target_date)))
-}
-# check 2 : does the same calendar date carry the same target value in every file?
-d1 <- files$h1
-for (h in c(3, 6, 12)) {
-  dh <- files[[paste0("h", h)]]
-  m <- match(dh$target_date, d1$target_date)
-  ok <- !is.na(m)
-  cat("h =", h, "| overlapping dates:", sum(ok),
-      "| max abs diff:", max(abs(dh$target[ok] - d1$target[m[ok]])), "\n")
-}
-# check 3 : are the predictors the same at the same month?
-pred_cols <- setdiff(names(d1), c("month", "target_date", "target"))
-for (h in c(3, 6, 12)) {
-  dh <- files[[paste0("h", h)]]
-  m <- match(dh$month, d1$month); ok <- !is.na(m)
-  cat("h =", h, "| max abs diff in X:",
-      max(abs(as.matrix(dh[ok, pred_cols]) - as.matrix(d1[m[ok], pred_cols]))), "\n")
-}
-# check 4 : the earlier symptoms
-# should be FALSE for h1 vs h3 curves at the same tuning date
-identical(cv_curves[[1]], cv_curves[[4]])   # adjust indices after fixing the storing line
-length(cv_curves)                            # should be 16
-warnings()
