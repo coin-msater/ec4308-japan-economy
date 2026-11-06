@@ -1,16 +1,5 @@
 ############################################
-# Elastic Net: direct rolling-window forecasts of Japan IP
-#
-# Built to mirror the team's Ridge and LASSO scripts exactly:
-#   - same 120-month rolling window of eligible rows
-#   - same periodic tuning schedule (retune every 100 months)
-#   - same 10-block chronological CV on the previous 100 origins
-#   - same lambda grid, same test sample (origins Sep 1992 - Dec 2021)
-#
-# Team conventions:
-#   Tuning:     CV RMSE (pooled over all validation forecasts)
-#   Evaluation: RMSE and MAE
-#   Output CSV: horizon, target_date, forecast, actual
+# Elastic Net
 ############################################
 
 library(glmnet)
@@ -31,19 +20,16 @@ test_start <- as.Date("1992-09-01")
 pre_covid_end <- as.Date("2019-12-01")
 covid_end <- as.Date("2021-12-01")
 
-# same lambda grid as Ridge and LASSO
 lambda_grid <- 10^seq(5, -4, length.out = 200)
-
-# Elastic Net only: alpha = 0 (Ridge) and alpha = 1 (LASSO) are excluded
 alpha_grid <- seq(0.05, 0.95, by = 0.05)
 
 # save results
-output_dir <- "elastic_net/results/periodic_10block"
+output_dir <- "elastic_net/results"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 
 ############################################
-# Helpers (identical to Ridge/LASSO)
+# Helpers
 ############################################
 
 # add months; all dates are the first day of a month
@@ -69,7 +55,7 @@ get_training_idx <- function(origin, df, window_size = 120) {
 
 
 ############################################
-# Periodic tuning schedule (identical to Ridge/LASSO)
+# Periodic tuning schedule
 ############################################
 
 test_dates <- seq(from = test_start, to = covid_end, by = "month")
@@ -100,13 +86,8 @@ stopifnot(
 ############################################
 # 10-block chronological CV over alpha AND lambda, scored by RMSE
 #
-# Folds, training windows and scored rows are exactly the ones
-# the Ridge/LASSO tune_lambda() uses. Inside each fold the model
+# Inside each fold the model
 # is fitted once per alpha across the full lambda grid.
-#
-# CV RMSE = sqrt(mean squared error over all scored validation
-# forecasts). Minimising it picks the same (alpha, lambda) as
-# minimising CV MSE, so results are consistent with Ridge/LASSO.
 ############################################
 
 tune_enet <- function(df, X, y, validation_start, validation_end, tuning_date,
@@ -160,7 +141,7 @@ tune_enet <- function(df, X, y, validation_start, validation_end, tuning_date,
     }
   }
   
-  # keep only fully scored validation rows (same rule as Ridge/LASSO)
+  # keep only fully scored validation rows
   valid_rows <- apply(is.finite(cv_errors), 1, all)
   n_scored <- sum(valid_rows)
   if (n_scored == 0) {
@@ -391,8 +372,6 @@ sapply(cv_curves, function(curve) min(curve) / curve[1])
 
 ############################################
 # Evaluation: RMSE and MAE
-# Ridge vs LASSO vs Elastic Net on identical forecasts
-# pre-COVID split is by TARGET date
 ############################################
 
 # accepts the standard format (forecast) or the older one (predicted)
@@ -417,24 +396,11 @@ evaluate <- function(f) {
   )
 }
 
-model_files <- c(
-  ridge = "ridge/results/periodic_10block/ridge_h%d.csv",
-  lasso = "lasso/results/periodic_10block/lasso_h%d.csv",
-  elastic_net = "elastic_net/results/periodic_10block/elastic_net_h%d.csv"
-)
-
-comparison <- do.call(rbind, lapply(names(model_files), function(m) {
-  do.call(rbind, lapply(horizons, function(h) {
-    path <- sprintf(model_files[[m]], h)
-    if (!file.exists(path)) return(NULL)
-    cbind(model = m, horizon = h, evaluate(read_forecasts(path)))
-  }))
+enet_errors <- do.call(rbind, lapply(horizons, function(h) {
+  cbind(horizon = h, evaluate(all_results[[paste0("h", h)]]))
 }))
-
-comparison <- comparison[order(comparison$horizon, comparison$model), ]
-print(comparison, row.names = FALSE)
-
-write_csv(comparison, file.path(output_dir, "model_comparison.csv"))
+print(enet_errors, row.names = FALSE)
+write_csv(enet_errors, file.path(output_dir, "elastic_net_errors.csv"))
 
 # intercept-only forecasts per horizon (every predictor shrunk to zero)
 sapply(all_results, function(f) sum(f$n_nonzero == 0))

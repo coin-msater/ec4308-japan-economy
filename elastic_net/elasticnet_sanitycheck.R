@@ -1,30 +1,25 @@
 ############################################
-# Sanity checks for Elastic Net (and Ridge/LASSO) output
-# Run from the project root after all three model scripts.
-#
-# Works with the standard format (horizon, target_date, forecast, actual)
-# and with the older Ridge/LASSO format (... predicted ...).
-# Models are matched by target_date, which is unique within a horizon.
+# Sanity checks for Elastic Net output
+# Run from the project root after elastic_net.R.
 ############################################
 
 library(readr)
 
 horizons <- c(1, 3, 6, 12)
-models <- c("ridge", "lasso", "elastic_net")
 window_size <- 120
+validation_size <- 100
+n_folds <- 10
 pre_covid_end <- as.Date("2019-12-01")
 expected_n <- length(seq(as.Date("1992-09-01"), as.Date("2021-12-01"), by = "month"))  # 352
 standard_cols <- c("horizon", "target_date", "forecast", "actual")
+results_dir <- "elastic_net/results"
 
-res_path <- function(model, h, suffix = "") {
-  sprintf("%s/results/periodic_10block/%s_h%d%s.csv", model, model, h, suffix)
+res_path <- function(h, suffix = "") {
+  sprintf("%s/elastic_net_h%d%s.csv", results_dir, h, suffix)
 }
 
-read_res <- function(model, h, suffix = "") {
-  f <- as.data.frame(read_csv(res_path(model, h, suffix), show_col_types = FALSE))
-  if (!"forecast" %in% names(f) && "predicted" %in% names(f)) {
-    names(f)[names(f) == "predicted"] <- "forecast"
-  }
+read_res <- function(h, suffix = "") {
+  f <- as.data.frame(read_csv(res_path(h, suffix), show_col_types = FALSE))
   for (v in intersect(c("forecast_origin", "target_date", "tuning_date"), names(f))) {
     f[[v]] <- as.Date(f[[v]])
   }
@@ -51,13 +46,13 @@ get_training_idx <- function(origin, df, window_size = 120) {
 
 
 ############################################
-# 1. Structure of the Elastic Net output
+# 1. Structure of the output files
 ############################################
 
-cat("\n== 1. Structure of Elastic Net output ==\n")
+cat("\n== 1. Structure of output ==\n")
 for (h in horizons) {
-  f <- read_res("elastic_net", h)
-  d <- read_res("elastic_net", h, "_details")
+  f <- read_res(h)
+  d <- read_res(h, "_details")
   gap <- mdiff(d$forecast_origin, d$target_date)
   cat(sprintf(
     "h=%2d | standard columns: %s | n=%d (expect %d) | NA forecasts=%d | dup targets=%d | target = origin + h: %s | targets %s to %s\n",
@@ -69,43 +64,60 @@ for (h in horizons) {
 
 
 ############################################
-# 2. Same CV design across the three models
+# 2. CV design: counts vs what the design implies
+#    Validation origins are the 100 months before the tuning date.
+#    A forecast is scored only if its target is observed by the
+#    tuning date, so 101 - h forecasts should be scored,
+#    in ceiling((101 - h) / 10) folds.
 ############################################
 
-cat("\n== 2. Validation forecasts per tuning date (should match across models) ==\n")
+cat("\n== 2. CV design ==\n")
 for (h in horizons) {
-  tl <- lapply(models, function(m) read_res(m, h, "_tuning"))
-  tab <- sapply(tl, function(t) t$n_scored)
-  colnames(tab) <- models
-  rownames(tab) <- format(tl[[1]]$tuning_date)
-  folds_same <- all(sapply(tl, function(t) identical(as.numeric(t$n_folds_used),
-                                                     as.numeric(tl[[1]]$n_folds_used))))
-  cat("h =", h, "| folds identical:", folds_same, "\n")
-  print(tab)
+  t <- read_res(h, "_tuning")
+  exp_scored <- validation_size + 1 - h
+  exp_folds <- ceiling(exp_scored / (validation_size / n_folds))
+  cat(sprintf("h = %d | expect %d scored forecasts in %d folds\n", h, exp_scored, exp_folds))
+  print(data.frame(
+    tuning_date = t$tuning_date,
+    n_scored = t$n_scored,
+    n_folds_used = t$n_folds_used,
+    as_expected = t$n_scored == exp_scored & t$n_folds_used == exp_folds
+  ), row.names = FALSE)
 }
 
 
 ############################################
-# 3. CV RMSE: Elastic Net vs Ridge and LASSO (same folds)
+# 3. CV RMSE surface
+#    best:               chosen (alpha, lambda)
+#    vs_intercept:       best / heaviest penalty (all predictors out)
+#                        below 1 = predictors help in CV
+#    vs_alpha_0.05/0.95: best / best at the near-Ridge and
+#                        near-LASSO ends of the alpha grid
+#                        should be <= 1
 ############################################
 
-cv_rmse_of <- function(t) {
-  if ("cv_rmse" %in% names(t)) t$cv_rmse else sqrt(t$cv_mse)
-}
-
-cat("\n== 3. CV RMSE at each tuning date ==\n")
+cat("\n== 3. CV RMSE surface ==\n")
 chk3 <- do.call(rbind, lapply(horizons, function(h) {
-  tl <- lapply(models, function(m) read_res(m, h, "_tuning"))
-  names(tl) <- models
-  data.frame(
-    horizon = h,
-    tuning_date = tl$elastic_net$tuning_date,
-    alpha = tl$elastic_net$alpha,
-    ridge = cv_rmse_of(tl$ridge),
-    lasso = cv_rmse_of(tl$lasso),
-    enet = cv_rmse_of(tl$elastic_net),
-    enet_vs_best = cv_rmse_of(tl$elastic_net) / pmin(cv_rmse_of(tl$ridge), cv_rmse_of(tl$lasso))
-  )
+  t <- read_res(h, "_tuning")
+  g <- read_res(h, "_cv_grid")
+  do.call(rbind, lapply(seq_len(nrow(t)), function(i) {
+    sub <- g[g$tuning_date == t$tuning_date[i], ]
+    best <- min(sub$cv_rmse)
+    heavy <- min(sub$cv_rmse[sub$lambda == max(sub$lambda)])
+    lo <- min(sub$cv_rmse[sub$alpha == min(sub$alpha)])
+    hi <- min(sub$cv_rmse[sub$alpha == max(sub$alpha)])
+    data.frame(
+      horizon = h,
+      tuning_date = t$tuning_date[i],
+      alpha = t$alpha[i],
+      lambda = signif(t$lambda[i], 4),
+      cv_rmse = best,
+      matches_tuning_file = isTRUE(all.equal(best, t$cv_rmse[i])),
+      vs_intercept = best / heavy,
+      vs_alpha_0.05 = best / lo,
+      vs_alpha_0.95 = best / hi
+    )
+  }))
 }))
 print(chk3, digits = 4, row.names = FALSE)
 
@@ -116,8 +128,8 @@ print(chk3, digits = 4, row.names = FALSE)
 
 cat("\n== 4. Grid edges and sparsity ==\n")
 for (h in horizons) {
-  t <- read_res("elastic_net", h, "_tuning")
-  d <- read_res("elastic_net", h, "_details")
+  t <- read_res(h, "_tuning")
+  d <- read_res(h, "_details")
   cat(sprintf(
     "h=%2d | lambda at edge: %d of %d | alpha at 0.05 or 0.95: %d | nonzero predictors median %g (range %d to %d) | intercept-only forecasts: %d\n",
     h, sum(t$lambda_at_edge), nrow(t), sum(t$alpha %in% c(0.05, 0.95)),
@@ -137,47 +149,39 @@ for (h in horizons) {
 cat("\n== 5. Pre-COVID RMSE relative to the historical mean ==\n")
 chk5 <- do.call(rbind, lapply(horizons, function(h) {
   df <- read_data(h)
-  base <- read_res("elastic_net", h, "_details")
-  bench <- t(sapply(base$forecast_origin, function(o) {
+  d <- read_res(h, "_details")
+  bench <- t(sapply(d$forecast_origin, function(o) {
     tr <- get_training_idx(o, df, window_size)
     c(hist_mean = mean(df$target[tr]), last_obs = df$target[tail(tr, 1)])
   }))
-  pre <- base$target_date <= pre_covid_end
-  rmse <- function(p) sqrt(mean((base$actual[pre] - p[pre])^2))
-
-  out <- data.frame(
+  pre <- d$target_date <= pre_covid_end
+  rmse <- function(p) sqrt(mean((d$actual[pre] - p[pre])^2))
+  data.frame(
     horizon = h,
+    rmse_enet = rmse(d$forecast),
     rmse_hist_mean = rmse(bench[, "hist_mean"]),
+    rel_enet = rmse(d$forecast) / rmse(bench[, "hist_mean"]),
     rel_last_obs = rmse(bench[, "last_obs"]) / rmse(bench[, "hist_mean"])
   )
-  for (m in models) {
-    f <- read_res(m, h)
-    p <- f$forecast[match(base$target_date, f$target_date)]
-    out[[paste0("rel_", m)]] <- rmse(p) / out$rmse_hist_mean
-  }
-  out
 }))
 print(chk5, digits = 3, row.names = FALSE)
 
 
 ############################################
-# 6. Forecast variability and agreement (pre-COVID)
+# 6. Forecast variability (pre-COVID)
 ############################################
 
-cat("\n== 6. Variability and agreement ==\n")
+cat("\n== 6. Forecast variability ==\n")
 chk6 <- do.call(rbind, lapply(horizons, function(h) {
-  fs <- lapply(models, function(m) read_res(m, h))
-  names(fs) <- models
-  base <- fs$elastic_net
-  pre <- base$target_date <= pre_covid_end
-  pick <- function(m, col) fs[[m]][[col]][match(base$target_date, fs[[m]]$target_date)]
+  f <- read_res(h)
+  d <- read_res(h, "_details")
+  pre <- f$target_date <= pre_covid_end
   data.frame(
     horizon = h,
-    same_actuals = all(sapply(models, function(m) isTRUE(all.equal(pick(m, "actual"), base$actual)))),
-    sd_ratio = sd(base$forecast[pre]) / sd(base$actual[pre]),
-    cor_actual = cor(base$forecast[pre], base$actual[pre]),
-    cor_with_ridge = cor(base$forecast, pick("ridge", "forecast"), use = "complete.obs"),
-    cor_with_lasso = cor(base$forecast, pick("lasso", "forecast"), use = "complete.obs")
+    files_agree = isTRUE(all.equal(f$forecast, d$forecast)) &&
+      isTRUE(all.equal(f$actual, d$actual)),
+    sd_ratio = sd(f$forecast[pre]) / sd(f$actual[pre]),
+    cor_actual = cor(f$forecast[pre], f$actual[pre])
   )
 }))
 print(chk6, digits = 3, row.names = FALSE)
@@ -190,7 +194,7 @@ print(chk6, digits = 3, row.names = FALSE)
 cat("\n== 7. Leakage audit ==\n")
 for (h in horizons) {
   df <- read_data(h)
-  d <- read_res("elastic_net", h, "_details")
+  d <- read_res(h, "_details")
   ok <- sapply(d$forecast_origin, function(o) {
     tr <- get_training_idx(o, df, window_size)
     length(tr) == window_size &&
@@ -207,11 +211,11 @@ for (h in horizons) {
 # 8. Actual vs forecast plot
 ############################################
 
-png("elastic_net/results/periodic_10block/actual_vs_forecast.png",
-    width = 1600, height = 1200, res = 150)
+plot_path <- file.path(results_dir, "actual_vs_forecast.png")
+png(plot_path, width = 1600, height = 1200, res = 150)
 old_par <- par(mfrow = c(2, 2), mar = c(3, 3, 2, 0.5), mgp = c(1.8, 0.5, 0))
 for (h in horizons) {
-  f <- read_res("elastic_net", h)
+  f <- read_res(h)
   plot(f$target_date, f$actual, type = "l", col = "grey50",
        xlab = "target date", ylab = "target", main = paste("h =", h))
   lines(f$target_date, f$forecast, col = "red")
@@ -221,4 +225,4 @@ for (h in horizons) {
 }
 par(old_par)
 dev.off()
-cat("\nPlot saved to elastic_net/results/periodic_10block/actual_vs_forecast.png\n")
+cat("\nPlot saved to", plot_path, "\n")
