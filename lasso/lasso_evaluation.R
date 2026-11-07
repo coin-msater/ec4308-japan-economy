@@ -14,7 +14,7 @@ MAE <- function(pred, actual) {
 # evaluation periods
 validation_end <- as.Date("1992-08-01")
 test_start <- as.Date("1992-09-01")
-pre_covid_end <- as.Date("2019-12-01")
+pre_covid_end <- as.Date("2019-12-01")       
 covid_end <- as.Date("2021-12-01")
 
 horizons <- c(1, 3, 6, 12)
@@ -33,16 +33,15 @@ for (h in horizons) {
     mutate(
       period = case_when(
         target_date <= validation_end ~ "Validation",
-        forecast_origin >= test_start &
-          forecast_origin <= pre_covid_end ~ "Pre-COVID",
-        forecast_origin >= as.Date("2020-01-01") &
-          forecast_origin <= covid_end ~ "COVID period"
+        target_date >= test_start & target_date <= pre_covid_end ~ "Pre-COVID",
+        target_date >= as.Date("2020-01-01") &
+          target_date <= covid_end ~ "COVID period"
       )
     )
   full_test <- results %>%
     filter(
-      forecast_origin >= test_start &
-        forecast_origin <= covid_end
+      target_date >= test_start &
+        target_date <= covid_end
     ) %>%
     summarise(
       period = "Full test",
@@ -74,15 +73,16 @@ print(evaluation_results)
 # save evaluation results
 write_csv(
   evaluation_results,
-  "ridge/results/periodic_10block_aligned/ridge_evaluation.csv"
+  "lasso/results/periodic_10block_aligned/lasso_evaluation.csv"
 )
 
-# PLOT LASSO ACTUAL VS PREDICTED
+par(mfrow = c(2, 2))
+# PLOT ACTUAL VS PREDICTED
 library(readr)
 
 horizons <- c(1, 3, 6, 12)
 
-# Set 2x2 plotting layout
+# Set 2x2 plotting layout BEFORE the loop
 par(mfrow = c(2, 2))
 
 for (h in horizons) {
@@ -104,25 +104,24 @@ for (h in horizons) {
     lwd = 1.5,
     xlab = "Target date",
     ylab = "Industrial production",
-    main = paste0("LASSO h", h, ": Actual vs Predicted")
+    main = paste0("lasso h", h, ": Actual vs Predicted")
   )
   
   lines(
     results$target_date,
     results$predicted,
-    col = "blue",
+    col = "red",
     lwd = 1.5
   )
   
   legend(
     "topright",
-    legend = c("Actual", "LASSO forecast"),
-    col = c("black", "blue"),
+    legend = c("Actual", "lasso forecast"),
+    col = c("black", "red"),
     lty = 1,
-    lwd = 1.5,
     cex = 0.7
   )
 }
 
-# Reset plotting layout
+# Reset layout AFTER all 4 plots
 par(mfrow = c(1, 1))
