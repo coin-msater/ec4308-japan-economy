@@ -24,7 +24,7 @@ evaluation_results <- data.frame()
 
 for (h in horizons) {
   results <- read_csv(
-    paste0("lasso/results/periodic_10block/lasso_h", h, ".csv"),
+    paste0("lasso/results/periodic_10block_aligned/lasso_h", h, ".csv"),
     show_col_types = FALSE
   )
   
@@ -32,7 +32,7 @@ for (h in horizons) {
   results <- results %>%
     mutate(
       period = case_when(
-        forecast_origin <= validation_end ~ "Validation",
+        target_date <= validation_end ~ "Validation",
         forecast_origin >= test_start &
           forecast_origin <= pre_covid_end ~ "Pre-COVID",
         forecast_origin >= as.Date("2020-01-01") &
@@ -71,6 +71,11 @@ for (h in horizons) {
 }
 
 print(evaluation_results)
+# save evaluation results
+write_csv(
+  evaluation_results,
+  "ridge/results/periodic_10block_aligned/ridge_evaluation.csv"
+)
 
 # PLOT LASSO ACTUAL VS PREDICTED
 library(readr)

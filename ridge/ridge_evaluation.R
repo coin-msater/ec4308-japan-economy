@@ -24,7 +24,7 @@ evaluation_results <- data.frame()
 
 for (h in horizons) {
   results <- read_csv(
-    paste0("ridge/results/periodic_10block/ridge_h", h, ".csv"),
+    paste0("ridge/results/periodic_10block_aligned/ridge_h", h, ".csv"),
     show_col_types = FALSE
   )
   
@@ -32,17 +32,16 @@ for (h in horizons) {
   results <- results %>%
     mutate(
       period = case_when(
-        forecast_origin <= validation_end ~ "Validation",
-        forecast_origin >= test_start &
-          forecast_origin <= pre_covid_end ~ "Pre-COVID",
-        forecast_origin >= as.Date("2020-01-01") &
-          forecast_origin <= covid_end ~ "COVID period"
+        target_date <= validation_end ~ "Validation",
+        target_date >= test_start & target_date <= pre_covid_end ~ "Pre-COVID",
+        target_date >= as.Date("2020-01-01") &
+          target_date <= covid_end ~ "COVID period"
       )
     )
   full_test <- results %>%
     filter(
-      forecast_origin >= test_start &
-        forecast_origin <= covid_end
+      target_date >= test_start &
+        target_date <= covid_end
     ) %>%
     summarise(
       period = "Full test",
@@ -71,6 +70,11 @@ for (h in horizons) {
 }
 
 print(evaluation_results)
+# save evaluation results
+write_csv(
+  evaluation_results,
+  "ridge/results/periodic_10block_aligned/ridge_evaluation.csv"
+)
 
 par(mfrow = c(2, 2))
 # PLOT ACTUAL VS PREDICTED
