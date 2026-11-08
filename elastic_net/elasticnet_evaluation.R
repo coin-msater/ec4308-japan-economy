@@ -163,3 +163,56 @@ for (h in horizons) {
 
 # Reset layout AFTER all 4 plots
 par(mfrow = c(1, 1), mar = c(5.1, 4.1, 4.1, 2.1))
+
+
+# SUMMARY FILE (same format as AR summary)
+
+summary_tbl <- data.frame()
+
+for (h in horizons) {
+  
+  # test forecasts
+  summary_results <- read_csv(
+    paste0(output_dir, "/elastic_net_h", h, ".csv"),
+    show_col_types = FALSE
+  ) %>%
+    mutate(target_date = as.Date(target_date)) %>%
+    filter(target_date >= test_start & target_date <= covid_end)
+  
+  # pre-COVID: targets Sep 1992 - Dec 2019
+  pre_covid <- summary_results %>%
+    filter(target_date <= pre_covid_end) %>%
+    summarise(
+      horizon = h,
+      period = "pre_covid",
+      test_months = n(),
+      RMSE = RMSE(predicted, actual),
+      MAE = MAE(predicted, actual)
+    )
+  
+  # full test sample: targets Sep 1992 - Dec 2021
+  through_dec_2021 <- summary_results %>%
+    summarise(
+      horizon = h,
+      period = "through_dec_2021",
+      test_months = n(),
+      RMSE = RMSE(predicted, actual),
+      MAE = MAE(predicted, actual)
+    )
+  
+  summary_tbl <- bind_rows(summary_tbl, pre_covid, through_dec_2021)
+}
+
+# check test sample sizes match the AR summary (328 and 352)
+stopifnot(
+  all(summary_tbl$test_months[summary_tbl$period == "pre_covid"] == 328),
+  all(summary_tbl$test_months[summary_tbl$period == "through_dec_2021"] == 352)
+)
+
+print(as.data.frame(summary_tbl), row.names = FALSE)
+
+# save summary
+write_csv(
+  summary_tbl,
+  paste0(output_dir, "/elastic_net_summary.csv")
+)
