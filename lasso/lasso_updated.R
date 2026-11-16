@@ -36,26 +36,6 @@ add_months <- function(date, n) {
   as.Date(sprintf("%04d-%02d-01", new_year, new_month))
 }
 
-# initial validation observations
-initial_cv_rows <- function(df, first_test_origin) {
-  which(
-    df$month >= validation_start &
-      df$month <= validation_end &
-      df$target_date <= first_test_origin
-  )
-}
-
-# subsequent validation observations
-retune_cv_rows <- function(df, retune_origin) {
-  start <- add_months(retune_origin, -(retune_interval - 1))
-  
-  which(
-    df$target_date >= start &
-      df$target_date <= retune_origin &
-      df$month < retune_origin
-  )
-}
-
 # helper function : select latest 120 eligible observations for rolling window
 get_training_idx <- function(origin, df, window_size = 120) {
   eligible <- which(
@@ -246,6 +226,12 @@ forecast_block <- function(df, X, y, start_date, end_date, lambda, lambda_grid,
       predict(fit, newx = X[idx, , drop = FALSE], s = lambda)
     )
     
+    # extract LASSO coefficients at selected lambda
+    lasso_coef <- as.matrix(coef(fit, s = lambda))
+    
+    # exclude intercept and count nonzero coefficients
+    n_selected <- sum(lasso_coef[-1, 1] != 0)
+    
     results <- rbind(
       results,
       data.frame(
@@ -253,7 +239,8 @@ forecast_block <- function(df, X, y, start_date, end_date, lambda, lambda_grid,
         target_date = df$target_date[idx],
         actual = y[idx],
         predicted = pred,
-        lambda = lambda
+        lambda = lambda,
+        n_selected = n_selected
       )
     )
   }
@@ -411,6 +398,22 @@ for (h in horizons) {
   write_csv(
     all_validation,
     file.path(output_dir, paste0("lasso_validation_h", h, ".csv"))
+  )
+  
+  # summary of LASSO variable selection
+  selection_summary <- data.frame(
+    horizon = h,
+    avg_selected = mean(all_forecasts$n_selected),
+    min_selected = min(all_forecasts$n_selected),
+    max_selected = max(all_forecasts$n_selected),
+    total_predictors = ncol(X)
+  )
+  
+  print(selection_summary)
+  
+  write_csv(
+    selection_summary,
+    file.path(output_dir, paste0("lasso_h", h, "_selection.csv"))
   )
   
   cat(

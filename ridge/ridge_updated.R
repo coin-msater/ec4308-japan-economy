@@ -36,26 +36,6 @@ add_months <- function(date, n) {
   as.Date(sprintf("%04d-%02d-01", new_year, new_month))
 }
 
-# initial validation observations
-initial_cv_rows <- function(df, first_test_origin) {
-  which(
-    df$month >= validation_start &
-      df$month <= validation_end &
-      df$target_date <= first_test_origin
-  )
-}
-
-# subsequent validation observations
-retune_cv_rows <- function(df, retune_origin) {
-  start <- add_months(retune_origin, -(retune_interval - 1))
-  
-  which(
-    df$target_date >= start &
-      df$target_date <= retune_origin &
-      df$month < retune_origin
-  )
-}
-
 # helper function : select latest 120 eligible observations for rolling window
 get_training_idx <- function(origin, df, window_size = 120) {
   eligible <- which(
@@ -140,7 +120,7 @@ tune_lambda <- function(df, X, y, validation_idx, tuning_date,
     
     # skip fold if insufficient historical data
     if (length(train_idx) < min_train_rows) {
-      stop("Insufficient training observations at ", as.character(origin))
+      stop("Insufficient training observations at ", as.character(fold_start))
     }
     
     # score only targets observable at the first test forecast origin
@@ -230,7 +210,7 @@ forecast_block <- function(df, X, y, start_date, end_date, lambda, lambda_grid,
     train_idx <- get_training_idx(origin, df, window_size)
     
     if (length(train_idx) < min_train_rows) {
-      stop("Insufficient training observations at ", as.character(fold_start))
+      stop("Insufficient training observations at ", as.character(origin))
     }
     
     # fit the complete path for numerical stability
@@ -327,7 +307,8 @@ for (h in horizons) {
     # save validation forecasts for ensemble
     validation_h <- tuning$validation_forecasts
     validation_h$horizon <- h
-    validation_h$tuning_date <- first_test_origin
+    validation_h$retune_target_date <- s$test_start
+    validation_h$information_cutoff <- first_test_origin
     
     all_validation <- rbind(
       all_validation,
@@ -354,7 +335,8 @@ for (h in horizons) {
       all_tuning,
       data.frame(
         horizon = h,
-        tuning_date = first_test_origin,
+        retune_target_date = s$test_start,
+        information_cutoff = first_test_origin,
         lambda = tuning$lambda,
         cv_mse = tuning$cv_mse,
         n_scored = tuning$n_scored,
@@ -364,7 +346,8 @@ for (h in horizons) {
     )
     
     cat(
-      "Tuning date:", as.character(first_test_origin),
+      "Retune target:", as.character(s$test_start),
+      "| Information cutoff:", as.character(first_test_origin),
       "| Lambda:", round(tuning$lambda, 4),
       "| CV forecasts:", tuning$n_scored,
       "| Folds:", tuning$n_folds_used,
