@@ -117,9 +117,8 @@ write_csv(
 )
 
 
-# PLOT ACTUAL VS PREDICTED
-
-# Set 2x2 plotting layout BEFORE the loop
+# plot actual vs predicted
+# set 2x2 plotting layout before the loop
 # (smaller margins so 4 plots fit in the Plots pane)
 par(mfrow = c(2, 2), mar = c(4, 4, 2.5, 1))
 
@@ -157,15 +156,15 @@ for (h in horizons) {
     legend = c("Actual", "Elastic Net forecast"),
     col = c("black", "red"),
     lty = 1,
-    cex = 0.7
+    cex = 0.6
   )
 }
 
-# Reset layout AFTER all 4 plots
+# reset layout after all 4 plots
 par(mfrow = c(1, 1), mar = c(5.1, 4.1, 4.1, 2.1))
 
 
-# SUMMARY FILE (same format as AR summary)
+# summary
 
 summary_tbl <- data.frame()
 
