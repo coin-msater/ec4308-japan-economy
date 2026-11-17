@@ -79,11 +79,7 @@ For each variable, the modelling dataset includes:
 x_t, x_(t-1), x_(t-2), x_(t-3)
 ```
 
-giving:
-
-```text
-225 × 4 = 900 predictors
-```
+giving 225 × 4 = 900 predictors. 
 
 The processed horizon-specific datasets are stored under `data/processed/`.
 
@@ -130,13 +126,3 @@ RF_modelling/
 ```
 
 After generating the individual model forecasts, run the ensemble and Diebold-Mariano test scripts for the combined evaluation.
-
-## Authors
-
-EC4308 Group 5, National University of Singapore
-
-- Lai Jing Xuan
-- Ong Hai Liang
-- Owen Lim Wen Xuan
-- Wang Ruoyu
-- Yang Xiuli
