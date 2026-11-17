@@ -214,15 +214,26 @@ forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
   
   results <- data.frame()
   
+  # containers for variable importance
+  predictor_names <- colnames(X)
+  
+  sum_abs_coef <- setNames(rep(0, ncol(X)), predictor_names)
+  sum_std_abs_coef <- setNames(rep(0, ncol(X)), predictor_names)
+  selected_count <- setNames(rep(0, ncol(X)), predictor_names)
+  
   for (idx in forecast_idx) {
+    
     origin <- df$month[idx]
     train_idx <- get_training_idx(origin, df, window_size)
     
     if (length(train_idx) < min_train_rows) {
-      stop("Insufficient training observations at ", as.character(origin))
+      stop(
+        "Insufficient training observations at ",
+        as.character(origin)
+      )
     }
     
-    # fit the complete path for numerical stability
+    # fit entire lambda path
     fit <- glmnet(
       X[train_idx, , drop = FALSE],
       y[train_idx],
@@ -231,10 +242,51 @@ forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
       standardize = TRUE
     )
     
+    # forecast
     pred <- as.numeric(
-      predict(fit, newx = X[idx, , drop = FALSE], s = lambda)
+      predict(
+        fit,
+        newx = X[idx, , drop = FALSE],
+        s = lambda
+      )
     )
     
+    # -------------------------------------------------
+    # VARIABLE SELECTION + IMPORTANCE
+    # -------------------------------------------------
+    
+    enet_coef <- as.matrix(coef(fit, s = lambda))
+    
+    # remove intercept
+    beta <- enet_coef[-1, 1]
+    names(beta) <- predictor_names
+    
+    # 1. number of selected variables
+    selected <- beta != 0
+    n_selected <- sum(selected)
+    
+    # 2. absolute coefficient magnitude
+    abs_beta <- abs(beta)
+    
+    # 3. standardised coefficient magnitude
+    # effect of a 1-SD change in predictor
+    predictor_sd <- apply(
+      X[train_idx, , drop = FALSE],
+      2,
+      sd
+    )
+    
+    # protect against constant predictors
+    predictor_sd[!is.finite(predictor_sd)] <- 0
+    
+    std_abs_beta <- abs_beta * predictor_sd
+    
+    # accumulate across rolling forecasts
+    sum_abs_coef <- sum_abs_coef + abs_beta
+    sum_std_abs_coef <- sum_std_abs_coef + std_abs_beta
+    selected_count <- selected_count + selected
+    
+    # save forecast-level results
     results <- rbind(
       results,
       data.frame(
@@ -243,12 +295,25 @@ forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
         actual = y[idx],
         predicted = pred,
         alpha = alpha,
-        lambda = lambda
+        lambda = lambda,
+        n_selected = n_selected
       )
     )
   }
   
-  results
+  # importance summary for this block
+  importance <- data.frame(
+    predictor = predictor_names,
+    sum_abs_coef = as.numeric(sum_abs_coef),
+    sum_std_abs_coef = as.numeric(sum_std_abs_coef),
+    selected_count = as.numeric(selected_count),
+    n_forecasts = nrow(results)
+  )
+  
+  list(
+    forecasts = results,
+    importance = importance
+  )
 }
 
 # run for all 4 horizons
@@ -282,6 +347,7 @@ for (h in horizons) {
   all_forecasts <- data.frame()
   all_tuning <- data.frame()
   all_validation <- data.frame()
+  all_importance <- data.frame()
   
   for (b in seq_len(nrow(schedule))) {
     s <- schedule[b, ]
@@ -324,7 +390,7 @@ for (h in horizons) {
       all_validation,
       validation_h)
     
-    forecasts <- forecast_block(
+    block_results <- forecast_block(
       df = df,
       X = X,
       y = y,
@@ -336,9 +402,21 @@ for (h in horizons) {
       window_size = window_size
     )
     
+    # forecasts
+    forecasts <- block_results$forecasts
+    
     all_forecasts <- rbind(
       all_forecasts,
       forecasts
+    )
+    
+    # variable importance
+    importance_block <- block_results$importance
+    importance_block$retune_target_date <- s$test_start
+    
+    all_importance <- rbind(
+      all_importance,
+      importance_block
     )
     
     all_tuning <- rbind(
@@ -404,6 +482,104 @@ for (h in horizons) {
   write_csv(
     all_validation,
     file.path(output_dir, paste0("elastic_net_validation_h", h, ".csv"))
+  )
+  
+  # ============================================================
+  # VARIABLE SELECTION SUMMARY
+  # ============================================================
+  
+  selection_summary <- data.frame(
+    horizon = h,
+    avg_selected = mean(all_forecasts$n_selected),
+    min_selected = min(all_forecasts$n_selected),
+    max_selected = max(all_forecasts$n_selected),
+    total_predictors = ncol(X)
+  )
+  
+  print(selection_summary)
+  
+  write_csv(
+    selection_summary,
+    file.path(
+      output_dir,
+      paste0("elastic_net_h", h, "_selection.csv")
+    )
+  )
+  
+  
+  # ============================================================
+  # VARIABLE IMPORTANCE SUMMARY
+  # ============================================================
+  
+  importance_summary <- aggregate(
+    cbind(
+      sum_abs_coef,
+      sum_std_abs_coef,
+      selected_count,
+      n_forecasts
+    ) ~ predictor,
+    data = all_importance,
+    FUN = sum
+  )
+  
+  # average absolute coefficient
+  importance_summary$avg_abs_coef <-
+    importance_summary$sum_abs_coef /
+    importance_summary$n_forecasts
+  
+  # average standardised absolute coefficient
+  importance_summary$avg_std_abs_coef <-
+    importance_summary$sum_std_abs_coef /
+    importance_summary$n_forecasts
+  
+  # proportion of rolling models where coefficient is nonzero
+  importance_summary$selection_frequency <-
+    importance_summary$selected_count /
+    importance_summary$n_forecasts
+  
+  importance_summary$horizon <- h
+  
+  # rank by standardised coefficient importance
+  importance_summary <- importance_summary[
+    order(
+      importance_summary$avg_std_abs_coef,
+      decreasing = TRUE
+    ),
+  ]
+  
+  importance_summary$importance_rank <-
+    seq_len(nrow(importance_summary))
+  
+  
+  # save full importance ranking
+  write_csv(
+    importance_summary,
+    file.path(
+      output_dir,
+      paste0(
+        "elastic_net_h",
+        h,
+        "_variable_importance.csv"
+      )
+    )
+  )
+  
+  
+  # print top 20 predictors
+  print(
+    head(
+      importance_summary[
+        ,
+        c(
+          "importance_rank",
+          "predictor",
+          "avg_std_abs_coef",
+          "avg_abs_coef",
+          "selection_frequency"
+        )
+      ],
+      20
+    )
   )
   
   cat(
