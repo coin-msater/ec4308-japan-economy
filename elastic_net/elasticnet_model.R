@@ -78,7 +78,7 @@ stopifnot(
   schedule$validation_end[1] == validation_end
 )
 
-# function : 10-BLOCK CHRONOLOGICAL CV OVER ALPHA AND LAMBDA
+# function : 10-block chronological CV over alpha and lambda
 tune_enet <- function(df, X, y, validation_idx, tuning_date,
                       lambda_grid, alpha_grid, window_size = 120,
                       n_folds = 10) {
@@ -202,7 +202,7 @@ tune_enet <- function(df, X, y, validation_idx, tuning_date,
   )
 }
 
-# function : MONTHLY TEST FORECASTING
+# function : monthly test forecasting
 forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
                            lambda_grid, window_size = 120) {
   
@@ -251,9 +251,7 @@ forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
       )
     )
     
-    # -------------------------------------------------
-    # VARIABLE SELECTION + IMPORTANCE
-    # -------------------------------------------------
+    # variable selection & importance
     
     enet_coef <- as.matrix(coef(fit, s = lambda))
     
@@ -318,9 +316,7 @@ forecast_block <- function(df, X, y, start_date, end_date, alpha, lambda,
 
 # run for all 4 horizons
 for (h in horizons) {
-  cat("\n====================================\n")
   cat("Running elastic net horizon:", h, "\n")
-  cat("====================================\n")
   
   df <- read_csv(
     paste0("data/processed/h", h, ".csv"),
@@ -453,7 +449,7 @@ for (h in horizons) {
     max(all_forecasts$target_date) == covid_end
   )
   
-  # Save this horizon's results
+  # save this horizon's results
   write_csv(
     all_forecasts,
     file.path(output_dir, paste0("elastic_net_h", h, ".csv"))
@@ -484,9 +480,7 @@ for (h in horizons) {
     file.path(output_dir, paste0("elastic_net_validation_h", h, ".csv"))
   )
   
-  # ============================================================
-  # VARIABLE SELECTION SUMMARY
-  # ============================================================
+  # variable selection summary
   
   selection_summary <- data.frame(
     horizon = h,
@@ -507,9 +501,7 @@ for (h in horizons) {
   )
   
   
-  # ============================================================
-  # VARIABLE IMPORTANCE SUMMARY
-  # ============================================================
+  # variable importance
   
   importance_summary <- aggregate(
     cbind(
