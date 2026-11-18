@@ -15,7 +15,7 @@ test_start <- as.Date("1992-09-01")
 pre_covid_end <- as.Date("2019-12-01")
 covid_end <- as.Date("2021-12-01")
 
-# AR(p) benchmark: BIC chooses p among AR(1) ... AR(max_p)
+# AR(p) benchmark: BIC chooses p from p=1 to p=max_p
 max_p <- 12
 p_grid <- seq_len(max_p)
 
@@ -23,7 +23,7 @@ p_grid <- seq_len(max_p)
 output_dir <- "AR/ar_results"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-# helper function : add months
+# helper function: add months
 # all dates are the first day of a month
 add_months <- function(date, n) {
   date <- as.Date(date)
@@ -35,7 +35,8 @@ add_months <- function(date, n) {
   as.Date(sprintf("%04d-%02d-01", new_year, new_month))
 }
 
-# helper function : select latest 120 eligible observations for rolling window
+
+# helper function: select latest 120 eligible observations for rolling window
 get_training_idx <- function(origin, df, window_size = 120) {
   eligible <- which(
     df$month < origin & df$target_date <= origin
@@ -44,8 +45,8 @@ get_training_idx <- function(origin, df, window_size = 120) {
   tail(eligible, window_size)
 }
 
+
 # build the periodic retuning schedule
-# test_dates are TARGET dates
 test_dates <- seq(
   from = test_start,
   to = covid_end,
@@ -74,8 +75,7 @@ stopifnot(
   schedule$validation_end[1] == validation_end
 )
 
-# get + validate one horizon's data frame (df_h1, df_h3, df_h6, df_h12
-# must already exist in the environment)
+# get & validate one horizon's data frame 
 get_horizon_data <- function(h) {
   nm <- paste0("df_h", h)
   if (!exists(nm)) stop("Missing data frame: ", nm)
@@ -102,7 +102,7 @@ get_horizon_data <- function(h) {
 }
 
 # build the full monthly x1 series
-# position i of the series <-> d$month[i]; the last h positions come from target
+# position i of the series -> d$month[i]. the last h positions come from target
 make_series <- function(d, h) {
   n <- nrow(d)
   # sanity checks on the assumption target[i] = x1 at month[i] + h
@@ -150,9 +150,8 @@ predict_ar <- function(coefs, Lrows, p) {
   as.numeric(cbind(1, Lrows[, 1:p, drop = FALSE]) %*% coefs)
 }
 
-# function : BIC LAG-ORDER SELECTION
+# BIC lag selection (lowest BIC wins)
 # AR(1) ... AR(max_p) are all fit on the same latest-120 eligible window
-# as of the block's first forecast origin; the lowest BIC wins
 select_p_bic <- function(origin, df, L, y) {
   train_idx <- get_train(origin, df, L)
   yy <- y[train_idx]
@@ -163,7 +162,7 @@ select_p_bic <- function(origin, df, L, y) {
   list(p = p_grid[which.min(bics)], bic = min(bics))
 }
 
-# function : MONTHLY TEST FORECASTING
+# monthly test forecasting
 forecast_block <- function(df, L, y, start_date, end_date, p) {
   
   # select test observations using target dates
@@ -226,7 +225,7 @@ run_horizon <- function(h) {
     # choose p by BIC at the block's first forecast origin
     sel <- select_p_bic(first_test_origin, df, L, y)
     
-    # test forecasts for the block: monthly refit, p fixed within the block
+    # test forecasts for the block
     forecasts <- forecast_block(
       df = df,
       L = L,

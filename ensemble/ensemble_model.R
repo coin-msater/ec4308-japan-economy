@@ -8,7 +8,7 @@ TEST_END      <- as.Date("2021-12-01")
 OUTPUT_DIR <- "ensemble/ensemble_results"
 dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# where each model's forecast files live; {h} is replaced by the horizon
+# where each model's forecast files are; {h} is replaced by the horizon
 model_files <- list(
   RF         = "RF_modelling/rf_results/rf_ensemble_h{h}.csv",
   Lasso      = "lasso/results/lasso_ensemble_h{h}.csv",
