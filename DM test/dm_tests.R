@@ -25,9 +25,9 @@ get_path <- function(model, h) {
   
   folder <- switch(model,
                    ar = "AR/ar_results",
-                   lasso = "lasso/results/periodic_10block_aligned",
-                   ridge = "ridge/results/periodic_10block_aligned",
-                   elastic_net = "elastic_net/results/periodic_10block_aligned",
+                   lasso = "lasso/results",
+                   ridge = "ridge/results",
+                   elastic_net = "elastic_net/results",
                    rf = "RF_modelling/rf_results",
                    ensemble = "ensemble/ensemble_results"
   )
@@ -150,6 +150,6 @@ for (h in horizons) {
 
 #save numerical t statistics and 5% significance decisions without p values or stars
 output <- do.call(rbind, results)
-write.csv(output, "dm_results.csv", row.names = FALSE)
+write.csv(output, "DM test/dm_results.csv", row.names = FALSE)
 print(output[, c("period", "horizon", "comparison", "rmse_1", "rmse_2",
                  "t_stat", "significant_5pct")], row.names = FALSE)
