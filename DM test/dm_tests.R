@@ -25,9 +25,9 @@ get_path <- function(model, h) {
   
   folder <- switch(model,
                    ar = "../AR/ar_results",
-                   lasso = "../lasso/results/periodic_10block_aligned",
-                   ridge = "../ridge/results/periodic_10block_aligned",
-                   elastic_net = "../elastic_net/results/periodic_10block_aligned",
+                   lasso = "../lasso/results",
+                   ridge = "../ridge/results",
+                   elastic_net = "../elastic_net/results",
                    rf = "../RF_modelling/rf_results",
                    ensemble = "../ensemble/ensemble_results"
   )

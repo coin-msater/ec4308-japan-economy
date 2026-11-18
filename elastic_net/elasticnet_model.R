@@ -25,7 +25,7 @@ lambda_grid <- 10^seq(5, -4, length.out = 200)
 alpha_grid <- seq(0.05, 0.95, by = 0.05)
 
 # save results
-output_dir <- "elastic_net/results/periodic_10block_aligned"
+output_dir <- "elastic_net/results"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # helper function : add months

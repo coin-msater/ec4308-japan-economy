@@ -11,9 +11,9 @@ dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 # where each model's forecast files live; {h} is replaced by the horizon
 model_files <- list(
   RF         = "RF_modelling/rf_results/rf_ensemble_h{h}.csv",
-  Lasso      = "lasso/results/periodic_10block_aligned/lasso_ensemble_h{h}.csv",
-  Ridge      = "ridge/results/periodic_10block_aligned/ridge_ensemble_h{h}.csv",
-  ElasticNet = "elastic_net/results/periodic_10block_aligned/elastic_net_ensemble_h{h}.csv"
+  Lasso      = "lasso/results/lasso_ensemble_h{h}.csv",
+  Ridge      = "ridge/results/ridge_ensemble_h{h}.csv",
+  ElasticNet = "elastic_net/results/elastic_net_ensemble_h{h}.csv"
 )
 
 # read one model's forecasts for one horizon
