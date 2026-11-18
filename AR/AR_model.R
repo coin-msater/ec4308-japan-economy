@@ -23,7 +23,7 @@ p_grid <- seq_len(max_p)
 output_dir <- "AR/ar_results"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-# helper function : add months
+# helper function: add months
 # all dates are the first day of a month
 add_months <- function(date, n) {
   date <- as.Date(date)
@@ -36,7 +36,7 @@ add_months <- function(date, n) {
 }
 
 
-# helper function : select latest 120 eligible observations for rolling window
+# helper function: select latest 120 eligible observations for rolling window
 get_training_idx <- function(origin, df, window_size = 120) {
   eligible <- which(
     df$month < origin & df$target_date <= origin
@@ -75,7 +75,7 @@ stopifnot(
   schedule$validation_end[1] == validation_end
 )
 
-# get + validate one horizon's data frame 
+# get & validate one horizon's data frame 
 get_horizon_data <- function(h) {
   nm <- paste0("df_h", h)
   if (!exists(nm)) stop("Missing data frame: ", nm)
@@ -102,7 +102,7 @@ get_horizon_data <- function(h) {
 }
 
 # build the full monthly x1 series
-# position i of the series <-> d$month[i]; the last h positions come from target
+# position i of the series -> d$month[i]. the last h positions come from target
 make_series <- function(d, h) {
   n <- nrow(d)
   # sanity checks on the assumption target[i] = x1 at month[i] + h
